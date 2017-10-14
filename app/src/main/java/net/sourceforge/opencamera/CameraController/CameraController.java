@@ -238,6 +238,7 @@ public abstract class CameraController {
     public abstract CameraController.Size getPreviewSize();
     public abstract void setPreviewSize(int width, int height);
 	public abstract void setWantBurst(boolean want_burst);
+	public abstract void setWantBurstTimer(boolean want_burst_timer);
 	public abstract void setExpoBracketing(boolean want_expo_bracketing);
 	/** n_images must be an odd number greater than 1.
 	 */

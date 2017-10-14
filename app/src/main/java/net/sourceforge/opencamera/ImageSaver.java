@@ -75,7 +75,8 @@ public class ImageSaver extends Thread {
 		enum ProcessType {
 			NORMAL,
 			HDR,
-			AVERAGE
+			AVERAGE,
+            MOR
 		}
 		final ProcessType process_type; // for jpeg
 		enum SaveBase {
@@ -308,6 +309,7 @@ public class ImageSaver extends Thread {
 	}
 
 	private Request pending_image_average_request = null;
+	private Request pending_image_mor_request = null;
 
 	void startImageAverage(boolean do_in_background,
 			Request.SaveBase save_base,
@@ -326,6 +328,37 @@ public class ImageSaver extends Thread {
 		}
 		pending_image_average_request = new Request(Request.Type.JPEG,
 				Request.ProcessType.AVERAGE,
+				save_base,
+				new ArrayList<byte[]>(),
+				null, null,
+				image_capture_intent, image_capture_intent_uri,
+				using_camera2, image_quality,
+				do_auto_stabilise, level_angle,
+				is_front_facing,
+				mirror,
+				current_date,
+				preference_stamp, preference_textstamp, font_size, color, pref_style, preference_stamp_dateformat, preference_stamp_timeformat, preference_stamp_gpsformat,
+				store_location, location, store_geo_direction, geo_direction,
+				sample_factor);
+	}
+
+	void startImageMovingObjectRemoval(boolean do_in_background,
+			Request.SaveBase save_base,
+			boolean image_capture_intent, Uri image_capture_intent_uri,
+			boolean using_camera2, int image_quality,
+			boolean do_auto_stabilise, double level_angle,
+			boolean is_front_facing,
+			boolean mirror,
+			Date current_date,
+			String preference_stamp, String preference_textstamp, int font_size, int color, String pref_style, String preference_stamp_dateformat, String preference_stamp_timeformat, String preference_stamp_gpsformat,
+			boolean store_location, Location location, boolean store_geo_direction, double geo_direction,
+			int sample_factor) {
+		if( MyDebug.LOG ) {
+			Log.d(TAG, "startImageMovingObjectRemoval");
+			Log.d(TAG, "do_in_background? " + do_in_background);
+		}
+		pending_image_mor_request = new Request(Request.Type.JPEG,
+				Request.ProcessType.MOR,
 				save_base,
 				new ArrayList<byte[]>(),
 				null, null,
@@ -362,6 +395,31 @@ public class ImageSaver extends Thread {
 		}
 		addRequest(pending_image_average_request);
 		pending_image_average_request = null;
+		addDummyRequest();
+	}
+
+	void addImageMovingObjectRemoval(byte [] image) {
+		if( MyDebug.LOG )
+			Log.d(TAG, "addImageMovingObjectRemoval");
+		if( pending_image_mor_request == null ) {
+			Log.e(TAG, "addImageMovingObjectRemoval called but no pending_image_mor_request");
+			return;
+		}
+		pending_image_mor_request.jpeg_images.add(image);
+		if( MyDebug.LOG )
+			Log.d(TAG, "image MOR request images: " + pending_image_mor_request.jpeg_images.size());
+	}
+
+	void finishImageMovingObjectRemoval() {
+		if( MyDebug.LOG )
+			Log.d(TAG, "finishImageMovingObjectRemoval");
+		if( pending_image_mor_request == null ) {
+			if( MyDebug.LOG )
+				Log.d(TAG, "finishImageMovingObjectRemoval called but no pending_image_mor_request");
+			return;
+		}
+		addRequest(pending_image_mor_request);
+		pending_image_mor_request = null;
 		addDummyRequest();
 	}
 
@@ -844,6 +902,45 @@ public class ImageSaver extends Thread {
     			Log.d(TAG, "HDR performance: time after saving HDR image: " + (System.currentTimeMillis() - time_s));
     		}
 			hdr_bitmap.recycle();
+	        System.gc();
+		}
+        else if( request.process_type == Request.ProcessType.MOR) {
+			if( MyDebug.LOG )
+				Log.d(TAG, "moving object removal");
+
+			saveBaseImages(request, "_");
+			main_activity.savingImage(true);
+
+			int mutableBitmapIndex = 0;
+			Bitmap mor_bitmap = null;
+			if( Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP ) {
+				try {
+			        List<Bitmap> bitmaps = loadBitmaps(request.jpeg_images, mutableBitmapIndex);
+                    mor_bitmap = hdrProcessor.processMOR(bitmaps);
+
+				}
+				catch(MORProcessorException e) {
+					e.printStackTrace();
+					throw new RuntimeException();
+				}
+			}
+			else {
+				Log.e(TAG, "shouldn't have offered MovingObjectReduction as an option if not on Android 5");
+				throw new RuntimeException();
+			}
+
+			if( MyDebug.LOG )
+				Log.d(TAG, "mor_bitmap: " + mor_bitmap + " is mutable? " + mor_bitmap.isMutable());
+	        System.gc();
+			main_activity.savingImage(false);
+
+			if( MyDebug.LOG )
+				Log.d(TAG, "save MOR image");
+			String suffix = "_MOR";
+			success = saveSingleImageNow(request, request.jpeg_images.get(mutableBitmapIndex), mor_bitmap, suffix, true, true);
+			if( MyDebug.LOG && !success )
+				Log.e(TAG, "saveSingleImageNow failed for MOR image");
+			mor_bitmap.recycle();
 	        System.gc();
 		}
 		else {

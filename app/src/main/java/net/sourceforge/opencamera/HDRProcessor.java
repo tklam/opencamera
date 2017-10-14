@@ -1991,4 +1991,78 @@ public class HDRProcessor {
 			Log.d(TAG, "total_sum: " + total_sum);
 		return total_sum;
 	}
+
+	/** Converts a list of bitmaps into a MOR image
+	 * @param bitmaps The list of bitmaps which should be of the same resolution.
+	 * @param output_bitmap The resultant image is stored in this bitmap.
+	 */
+	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+	public Bitmap processMOR(List<Bitmap> bitmaps) throws MORProcessorException {
+	    return processMORCore(bitmaps);
+	}
+
+	/** Core implementation of MOR algorithm.
+	 *  Requires Android 4.4 (API level 19, Kitkat), due to using Renderscript without the support libraries.
+	 *  And we now need Android 5.0 (API level 21, Lollipop) for forEach_Dot with LaunchOptions.
+	 *  Using the support libraries (set via project.properties renderscript.support.mode) would bloat the APK
+	 *  by around 1799KB! We don't care about pre-Android 4.4 (HDR requires CameraController2 which requires
+	 *  Android 5.0 anyway; even if we later added support for CameraController1, we can simply say HDR requires
+	 *  Android 5.0).
+	 */
+	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+	private Bitmap processMORCore(List<Bitmap> bitmaps) {
+        int bitmapsPerIteration = 3;
+		int width = bitmaps.get(0).getWidth();
+		int height = bitmaps.get(0).getHeight();
+		int n_bitmaps = bitmaps.size();
+        int curAdditionalBitmapIndex = 1;
+        int firstStd = 64;
+        int laterStd = 8;
+        int std = 8;
+
+        initRenderscript();
+
+        int iterations = 2;
+        int max_iterations = 4;
+        int batch_iterations = 1+(n_bitmaps-bitmapsPerIteration)/(bitmapsPerIteration-1);
+        int max_batch_iterations = batch_iterations;
+
+        Allocation baseAllocation = null;
+        Allocation outAllocation = Allocation.createFromBitmap(rs, bitmaps.get(0));
+        ScriptC_process_mor morScript = new ScriptC_process_mor(rs);
+        Allocation [] inAllocations = new Allocation[bitmapsPerIteration -1];
+
+        do {
+            batch_iterations = max_batch_iterations;
+            curAdditionalBitmapIndex = 1;
+
+            if (iterations != max_iterations) {
+                baseAllocation = outAllocation;
+                morScript.set_is_first_run(false);
+                std = laterStd;
+            }
+            else {
+                baseAllocation = Allocation.createFromBitmap(rs, bitmaps.get(0));
+                morScript.set_is_first_run(true);
+                std = firstStd;
+            }
+
+            do {
+                for(int i=1;i<bitmapsPerIteration;++i) {
+                    inAllocations[i-1] = Allocation.createFromBitmap(rs, bitmaps.get(curAdditionalBitmapIndex));
+                    ++curAdditionalBitmapIndex;
+                }
+
+                morScript.set_init_std(std);
+                morScript.set_additional_frames(inAllocations);
+                morScript.forEach_root(baseAllocation, outAllocation);
+
+                outAllocation.copyTo(bitmaps.get(0));
+
+                --batch_iterations;
+            } while (batch_iterations > 0);
+            --iterations;
+        } while (iterations > 0);
+        return bitmaps.get(0);
+	}
 }

@@ -1623,6 +1623,8 @@ public class Preview implements SurfaceHolder.Callback, TextureView.SurfaceTextu
 
 		camera_controller.setWantBurst( applicationInterface.isCameraBurstPref() );
 
+		camera_controller.setWantBurstTimer( applicationInterface.isCameraBurstTimerPref() );
+
 		camera_controller.setOptimiseAEForDRO( applicationInterface.getOptimiseAEForDROPref() );
 		
 		// Must set preview size before starting camera preview

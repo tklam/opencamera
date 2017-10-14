@@ -695,6 +695,11 @@ public class CameraController1 extends CameraController {
 	}
 
 	@Override
+	public void setWantBurstTimer(boolean want_burst) {
+		// not supported
+	}
+
+	@Override
 	public void setExpoBracketing(boolean want_expo_bracketing) {
 		if( MyDebug.LOG )
 			Log.d(TAG, "setExpoBracketing: " + want_expo_bracketing);

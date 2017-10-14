@@ -81,6 +81,7 @@ public class CameraController2 extends CameraController {
 	private boolean use_expo_fast_burst = true;
 	private boolean optimise_ae_for_dro = false;
 	private boolean want_burst;
+	private boolean want_burst_timer;
 	private boolean want_raw;
 	//private boolean want_raw = true;
 	private android.util.Size raw_size;
@@ -2153,6 +2154,28 @@ public class CameraController2 extends CameraController {
 		camera_settings.setAEMode(previewBuilder, false); // need to set the ae mode, as flash is disabled for burst mode
 	}
 
+	public void setWantBurstTimer(boolean want_burst_timer) {
+		if( MyDebug.LOG )
+			Log.d(TAG, "setWantBurst: " + want_burst_timer);
+		if( camera == null ) {
+			if( MyDebug.LOG )
+				Log.e(TAG, "no camera");
+			return;
+		}
+		if( this.want_burst_timer == want_burst_timer ) {
+			return;
+		}
+		if( captureSession != null ) {
+			// can only call this when captureSession not created - as it affects how we create the imageReader
+			if( MyDebug.LOG )
+				Log.e(TAG, "can't set burst when captureSession running!");
+			throw new RuntimeException(); // throw as RuntimeException, as this is a programming error
+		}
+		this.want_burst_timer = want_burst_timer;
+		updateUseFakePrecaptureMode(camera_settings.flash_value);
+		camera_settings.setAEMode(previewBuilder, false); // need to set the ae mode, as flash is disabled for burst mode
+	}
+
 	@Override
 	public void setUseCamera2FakeFlash(boolean use_fake_precapture) {
 		if( MyDebug.LOG )
@@ -2679,7 +2702,7 @@ public class CameraController2 extends CameraController {
     	if( frontscreen_flash ) {
     		use_fake_precapture_mode = true;
     	}
-    	else if( this.want_expo_bracketing || this.want_burst )
+    	else if( this.want_expo_bracketing || this.want_burst || this.want_burst_timer )
     		use_fake_precapture_mode = true;
     	else {
     		use_fake_precapture_mode = use_fake_precapture;
@@ -3714,6 +3737,10 @@ public class CameraController2 extends CameraController {
 				takePictureBurst();
 				return;
 			}
+			else if( want_burst_timer ) {
+				takePictureBurstTimer();
+				return;
+			}
 		}
 		if( camera == null || captureSession == null ) {
 			if( MyDebug.LOG )
@@ -4113,7 +4140,7 @@ public class CameraController2 extends CameraController {
 			}
 			// else don't turn torch off, as user may be in torch on mode
 
-			n_burst = 4;
+			n_burst = 3;
 			burst_single_request = false;
 
 			if( capture_result_has_iso ) {
@@ -4241,6 +4268,126 @@ public class CameraController2 extends CameraController {
 		}
 	}
 
+	private void takePictureBurstTimer() {
+		if( MyDebug.LOG )
+			Log.d(TAG, "takePictureBurst");
+		if( MyDebug.LOG && !want_burst_timer ) {
+			Log.e(TAG, "takePictureBurst called but want_burst_timer is false");
+		}
+		if( camera == null || captureSession == null ) {
+			if( MyDebug.LOG )
+				Log.d(TAG, "no camera or capture session");
+			return;
+		}
+		try {
+			if( MyDebug.LOG ) {
+				Log.d(TAG, "imageReader: " + imageReader.toString());
+				Log.d(TAG, "imageReader surface: " + imageReader.getSurface().toString());
+			}
+
+			CaptureRequest.Builder stillBuilder = camera.createCaptureRequest(previewIsVideoMode ? CameraDevice.TEMPLATE_VIDEO_SNAPSHOT : CameraDevice.TEMPLATE_STILL_CAPTURE);
+			stillBuilder.set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_STILL_CAPTURE);
+			// n.b., don't set RequestTag.CAPTURE here - we only do it for the last of the burst captures (see below)
+			camera_settings.setupBuilder(stillBuilder, true);
+			if( use_fake_precapture_mode && fake_precapture_torch_performed ) {
+				if( MyDebug.LOG )
+					Log.d(TAG, "setting torch for capture");
+				if( !camera_settings.has_iso )
+					stillBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
+				stillBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH);
+				test_fake_flash_photo++;
+			}
+
+			stillBuilder.set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF);
+			stillBuilder.set(CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE, CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE_OFF);
+			stillBuilder.set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF);
+
+			clearPending();
+			// shouldn't add preview surface as a target - see note in takePictureAfterPrecapture()
+			stillBuilder.addTarget(imageReader.getSurface());
+			// don't add target imageReaderRaw, as Raw not supported for burst
+
+			if( use_fake_precapture_mode && fake_precapture_torch_performed ) {
+				stillBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH);
+				test_fake_flash_photo++;
+			}
+			// else don't turn torch off, as user may be in torch on mode
+
+			n_burst = 9;
+			burst_single_request = false;
+
+			if( MyDebug.LOG )
+				Log.d(TAG, "n_burst: " + n_burst);
+
+			final CaptureRequest request = stillBuilder.build();
+			stillBuilder.setTag(RequestTag.CAPTURE);
+			final CaptureRequest last_request = stillBuilder.build();
+
+			if( !previewIsVideoMode ) {
+				captureSession.stopRepeating(); // see note under takePictureAfterPrecapture()
+			}
+
+			if( jpeg_cb != null ) {
+				if( MyDebug.LOG )
+					Log.d(TAG, "call onStarted() in callback");
+				jpeg_cb.onStarted();
+			}
+
+            final int burst_delay = 200;
+            new Runnable() {
+                int n_remaining = n_burst;
+
+                @Override
+                public void run() {
+                    if( MyDebug.LOG ) {
+                        Log.d(TAG, "takePictureBurstTimer runnable");
+                        if( n_remaining == 1 ) {
+                            Log.d(TAG, "    is last request");
+                        }
+                    }
+                    try {
+                        captureSession.capture(n_remaining == 1 ? last_request : request, previewCaptureCallback, handler);
+                        n_remaining--;
+                        if( MyDebug.LOG )
+                            Log.d(TAG, "takePictureBurstTimer n_remaining: " + n_remaining);
+                        if( n_remaining > 0 ) {
+                            handler.postDelayed(this, burst_delay);
+                        }
+                    }
+                    catch(CameraAccessException e) {
+                        if( MyDebug.LOG ) {
+                            Log.e(TAG, "failed to take picture burst");
+                            Log.e(TAG, "reason: " + e.getReason());
+                            Log.e(TAG, "message: " + e.getMessage());
+                        }
+                        e.printStackTrace();
+                        jpeg_cb = null;
+                        if( take_picture_error_cb != null ) {
+                            take_picture_error_cb.onError();
+                            take_picture_error_cb = null;
+                        }
+                    }
+                }
+            }.run();
+
+			if( sounds_enabled ) // play shutter sound asap, otherwise user has the illusion of being slow to take photos
+				media_action_sound.play(MediaActionSound.SHUTTER_CLICK);
+		}
+		catch(CameraAccessException e) {
+			if( MyDebug.LOG ) {
+				Log.e(TAG, "failed to take picture burst");
+				Log.e(TAG, "reason: " + e.getReason());
+				Log.e(TAG, "message: " + e.getMessage());
+			}
+			e.printStackTrace();
+			jpeg_cb = null;
+			if( take_picture_error_cb != null ) {
+				take_picture_error_cb.onError();
+				take_picture_error_cb = null;
+			}
+		}
+	}
+
 	private void runPrecapture() {
 		if( MyDebug.LOG )
 			Log.d(TAG, "runPrecapture");
@@ -4248,8 +4395,8 @@ public class CameraController2 extends CameraController {
 		if( MyDebug.LOG ) {
 			if( use_fake_precapture_mode )
 				Log.e(TAG, "shouldn't be doing standard precapture when use_fake_precapture_mode is true!");
-			else if( want_expo_bracketing || want_burst )
-				Log.e(TAG, "shouldn't be doing precapture for want_expo_bracketing/want_burst - should be using fake precapture!");
+			else if( want_expo_bracketing || want_burst || want_burst_timer)
+				Log.e(TAG, "shouldn't be doing precapture for want_expo_bracketing/want_burst/want_burst_timer - should be using fake precapture!");
 		}
 		try {
 			// use a separate builder for precapture - otherwise have problem that if we take photo with flash auto/on of dark scene, then point to a bright scene, the autoexposure isn't running until we autofocus again

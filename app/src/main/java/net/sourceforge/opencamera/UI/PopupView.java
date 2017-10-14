@@ -170,6 +170,10 @@ public class PopupView extends LinearLayout {
 				photo_modes.add(getResources().getString(R.string.photo_mode_noise_reduction));
 				photo_mode_values.add(MyApplicationInterface.PhotoMode.NoiseReduction);
 			}
+    		if( main_activity.supportsMovingObjectRemoval() ) {
+				photo_modes.add(getResources().getString(R.string.photo_mode_moving_object_removal));
+				photo_mode_values.add(MyApplicationInterface.PhotoMode.MovingObjectRemoval);
+			}
 			if( preview.isVideo() ) {
 				// only show photo modes when in photo mode, not video mode!
 				// (photo modes not supported for photo snapshop whilst recording video)
@@ -231,6 +235,9 @@ public class PopupView extends LinearLayout {
     						}
 							else if( new_photo_mode == MyApplicationInterface.PhotoMode.NoiseReduction ) {
 								editor.putString(PreferenceKeys.getPhotoModePreferenceKey(), "preference_photo_mode_noise_reduction");
+							}
+							else if( new_photo_mode == MyApplicationInterface.PhotoMode.MovingObjectRemoval) {
+								editor.putString(PreferenceKeys.getPhotoModePreferenceKey(), "preference_photo_mode_moving_object_reduction");
 							}
     						else {
                 				if( MyDebug.LOG )

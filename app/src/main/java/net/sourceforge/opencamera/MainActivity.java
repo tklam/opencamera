@@ -1237,6 +1237,7 @@ public class MainActivity extends Activity implements AudioListener.AudioListene
 		bundle.putBoolean("supports_raw", this.preview.supportsRaw());
 		bundle.putBoolean("supports_hdr", this.supportsHDR());
 		bundle.putBoolean("supports_nr", this.supportsNoiseReduction());
+		bundle.putBoolean("supports_mor", this.supportsMovingObjectRemoval());
 		bundle.putBoolean("supports_expo_bracketing", this.supportsExpoBracketing());
 		bundle.putInt("max_expo_bracketing_n_images", this.maxExpoBracketingNImages());
 		bundle.putBoolean("supports_exposure_compensation", this.preview.supportsExposures());
@@ -2700,6 +2701,10 @@ public class MainActivity extends Activity implements AudioListener.AudioListene
     }
 
     public boolean supportsNoiseReduction() {
+		return( Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && preview.usingCamera2API() && large_heap_memory >= 512 && preview.supportsExpoBracketing() );
+	}
+
+    public boolean supportsMovingObjectRemoval() {
 		return( Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && preview.usingCamera2API() && large_heap_memory >= 512 && preview.supportsExpoBracketing() );
 	}
     

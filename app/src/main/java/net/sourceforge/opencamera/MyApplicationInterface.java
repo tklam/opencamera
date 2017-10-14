@@ -59,7 +59,8 @@ public class MyApplicationInterface implements ApplicationInterface {
 		DRO, // single image "fake" HDR
     	HDR, // HDR created from multiple (expo bracketing) images
     	ExpoBracketing, // take multiple expo bracketed images, without combining to a single image
-		NoiseReduction
+		NoiseReduction,
+        MovingObjectRemoval // take multiple images, build a GMM model for each pixel, and remove moving objects
     }
     
 	private final MainActivity main_activity;
@@ -829,6 +830,14 @@ public class MyApplicationInterface implements ApplicationInterface {
 	}
 
     @Override
+    public boolean isCameraBurstTimerPref() {
+    	PhotoMode photo_mode = getPhotoMode();
+        if( photo_mode == PhotoMode.MovingObjectRemoval)
+			return true;
+		return false;
+	}
+
+    @Override
     public int getExpoBracketingNImagesPref() {
 		if( MyDebug.LOG )
 			Log.d(TAG, "getExpoBracketingNImagesPref");
@@ -904,6 +913,9 @@ public class MyApplicationInterface implements ApplicationInterface {
 		boolean noise_reduction = photo_mode_pref.equals("preference_photo_mode_noise_reduction");
 		if( noise_reduction && main_activity.supportsNoiseReduction() )
 			return PhotoMode.NoiseReduction;
+		boolean moving_object_reduction= photo_mode_pref.equals("preference_photo_mode_moving_object_reduction");
+		if( moving_object_reduction && main_activity.supportsMovingObjectRemoval() )
+			return PhotoMode.MovingObjectRemoval;
 		return PhotoMode.Standard;
     }
 
@@ -1496,6 +1508,9 @@ public class MyApplicationInterface implements ApplicationInterface {
 		if( photo_mode == PhotoMode.NoiseReduction ) {
 			imageSaver.finishImageAverage();
 		}
+		if( photo_mode == PhotoMode.MovingObjectRemoval) {
+			imageSaver.finishImageMovingObjectRemoval();
+		}
 
 		// call this, so that if pause-preview-after-taking-photo option is set, we remove the "taking photo" border indicator straight away
 		// also even for normal (not pausing) behaviour, good to remove the border asap
@@ -1939,6 +1954,25 @@ public class MyApplicationInterface implements ApplicationInterface {
 					sample_factor);
 			}
 			imageSaver.addImageAverage(images.get(0));
+			success = true;
+		}
+        else if( photo_mode == PhotoMode.MovingObjectRemoval) {
+			if( n_capture_images == 1 ) {
+				ImageSaver.Request.SaveBase save_base = ImageSaver.Request.SaveBase.SAVEBASE_FIRST;
+
+				imageSaver.startImageMovingObjectRemoval(true,
+					save_base,
+					image_capture_intent, image_capture_intent_uri,
+					using_camera2, image_quality,
+					do_auto_stabilise, level_angle,
+					is_front_facing,
+					mirror,
+					current_date,
+					preference_stamp, preference_textstamp, font_size, color, pref_style, preference_stamp_dateformat, preference_stamp_timeformat, preference_stamp_gpsformat,
+					store_location, location, store_geo_direction, geo_direction,
+					sample_factor);
+			}
+			imageSaver.addImageMovingObjectRemoval(images.get(0));
 			success = true;
 		}
 		else {
